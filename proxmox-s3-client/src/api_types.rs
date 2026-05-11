@@ -145,6 +145,11 @@ serde_plain::derive_fromstr_from_deserialize!(ProviderQuirks);
             type: HumanByte,
             optional: true,
         },
+        "use-node-proxy": {
+            type: bool,
+            optional: true,
+            default: false,
+        },
     },
 )]
 #[derive(Serialize, Deserialize, Updater, Clone, PartialEq)]
@@ -191,6 +196,9 @@ pub struct S3ClientConfig {
     /// Combined rate limit for GET and HEAD requests given as #request/s.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit_passive_requests: Option<u64>,
+    /// Use node proxy for client connections
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub use_node_proxy: Option<bool>,
 }
 
 impl S3ClientConfig {
