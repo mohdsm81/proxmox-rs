@@ -520,7 +520,7 @@ impl ApiType for FilesystemOptions {
         "Filesystem-specific options to set on the root disk.",
         &[
             (
-                "arc_max",
+                "arc-max",
                 true,
                 &IntegerSchema::new("Maximum ARC size that ZFS should use, in MiB")
                     .minimum(64)
