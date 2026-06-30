@@ -167,7 +167,7 @@ pub struct S3ClientConfig {
     /// Use path style bucket addressing over vhost style.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path_style: Option<bool>,
-    /// Rate limit for put requests given as #request/s.
+    /// Rate limit for put requests given as #request/s (deprecated: use active-rate-limit instead).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub put_rate_limit: Option<u64>,
     /// List of provider specific feature implementation quirks.
@@ -185,6 +185,12 @@ pub struct S3ClientConfig {
     /// Upload burst
     #[serde(skip_serializing_if = "Option::is_none")]
     pub burst_out: Option<HumanByte>,
+    /// Combined rate limit for PUT, POST and DELETE requests given as #request/s.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit_active_requests: Option<u64>,
+    /// Combined rate limit for GET and HEAD requests given as #request/s.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit_passive_requests: Option<u64>,
 }
 
 impl S3ClientConfig {

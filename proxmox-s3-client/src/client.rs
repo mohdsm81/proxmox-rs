@@ -22,7 +22,7 @@ use tracing::error;
 
 use proxmox_http::client::HttpsConnector;
 use proxmox_http::{Body, ProxyConfig};
-use proxmox_rate_limiter::{RateLimit, RateLimiter, SharedRateLimiter};
+use proxmox_rate_limiter::{RateLimit, RateLimiter, ShareableRateLimit, SharedRateLimiter};
 use proxmox_schema::api_types::CERT_FINGERPRINT_SHA256_SCHEMA;
 
 use crate::api_types::{ProviderQuirks, S3ClientConfig};
@@ -76,10 +76,14 @@ pub struct S3RateLimiterOptions {
 /// Configuration  for the https connector's rate limiter
 pub struct S3RateLimiterConfig {
     options: S3RateLimiterOptions,
+    // bandwidth limits
     rate_in: Option<u64>,
     burst_in: Option<u64>,
     rate_out: Option<u64>,
     burst_out: Option<u64>,
+    // request rate limits
+    active: Option<u64>,
+    passive: Option<u64>,
 }
 
 /// Configuration for the s3 client's shared request counters
@@ -143,6 +147,8 @@ impl S3ClientOptions {
             burst_in: config.burst_in.map(|human_bytes| human_bytes.as_u64()),
             rate_out: config.rate_out.map(|human_bytes| human_bytes.as_u64()),
             burst_out: config.burst_out.map(|human_bytes| human_bytes.as_u64()),
+            active: config.limit_active_requests,
+            passive: config.limit_passive_requests,
         });
         Self {
             endpoint: config.endpoint,
@@ -169,6 +175,9 @@ pub struct S3Client {
     client: Client<HttpsConnector, Body>,
     options: S3ClientOptions,
     authority: Authority,
+    active_request_rate_limiter: Option<Arc<SharedRateLimiter>>,
+    passive_request_rate_limiter: Option<Arc<SharedRateLimiter>>,
+    // TODO: Drop for PBS 5.
     put_rate_limiter: Option<Arc<Mutex<RateLimiter>>>,
     request_counters: Option<Arc<SharedRequestCounters>>,
 }
@@ -234,6 +243,7 @@ impl S3Client {
             S3_TCP_KEEPIDLE_TIME,
         );
 
+        let (mut passive_request_rate_limiter, mut active_request_rate_limiter) = (None, None);
         if let Some(limiter_config) = &options.rate_limiter_config {
             if let Some(limit) = limiter_config.rate_in {
                 let limiter = SharedRateLimiter::mmap_shmem(
@@ -255,6 +265,28 @@ impl S3Client {
                     limiter_config.options.base_path.clone(),
                 )?;
                 https_connector.set_write_limiter(Some(Arc::new(limiter)));
+            }
+
+            if let Some(limit) = limiter_config.active {
+                let limiter = SharedRateLimiter::mmap_shmem(
+                    &format!("{}.active-requests", limiter_config.options.id),
+                    limit,
+                    limit,
+                    limiter_config.options.user.clone(),
+                    limiter_config.options.base_path.clone(),
+                )?;
+                active_request_rate_limiter = Some(Arc::new(limiter));
+            }
+
+            if let Some(limit) = limiter_config.passive {
+                let limiter = SharedRateLimiter::mmap_shmem(
+                    &format!("{}.active-requests", limiter_config.options.id),
+                    limit,
+                    limit,
+                    limiter_config.options.user.clone(),
+                    limiter_config.options.base_path.clone(),
+                )?;
+                passive_request_rate_limiter = Some(Arc::new(limiter));
             }
         }
 
@@ -300,15 +332,21 @@ impl S3Client {
 
         let authority = Authority::try_from(authority)?;
 
-        let put_rate_limiter = options.put_rate_limit.map(|limit| {
-            let limiter = RateLimiter::new(limit, limit);
-            Arc::new(Mutex::new(limiter))
-        });
+        let put_rate_limiter = if active_request_rate_limiter.is_none() {
+            options.put_rate_limit.map(|limit| {
+                let limiter = RateLimiter::new(limit, limit);
+                Arc::new(Mutex::new(limiter))
+            })
+        } else {
+            None
+        };
 
         Ok(Self {
             client,
             options,
             authority,
+            active_request_rate_limiter,
+            passive_request_rate_limiter,
             put_rate_limiter,
             request_counters,
         })
@@ -440,12 +478,25 @@ impl S3Client {
 
         for retry in 0..MAX_S3_HTTP_REQUEST_RETRY {
             let request = Request::from_parts(parts.clone(), Body::from(body_bytes.clone()));
-            if parts.method == Method::PUT {
-                if let Some(limiter) = &self.put_rate_limiter {
+            if let Some(limiter) = &self.active_request_rate_limiter {
+                if matches!(parts.method, Method::PUT | Method::POST | Method::DELETE) {
+                    let sleep = limiter.register_traffic(Instant::now(), 1);
+                    tokio::time::sleep(sleep).await;
+                }
+            } else if let Some(limiter) = &self.put_rate_limiter {
+                //TODO: Drop with PBS 5
+                if parts.method == Method::PUT {
                     let sleep = {
                         let mut limiter = limiter.lock().unwrap();
                         limiter.register_traffic(Instant::now(), 1)
                     };
+                    tokio::time::sleep(sleep).await;
+                }
+            }
+
+            if let Some(limiter) = &self.passive_request_rate_limiter {
+                if matches!(parts.method, Method::GET | Method::HEAD) {
+                    let sleep = limiter.register_traffic(Instant::now(), 1);
                     tokio::time::sleep(sleep).await;
                 }
             }
