@@ -515,6 +515,7 @@ impl S3Client {
                     StatusCode::INTERNAL_SERVER_ERROR
                         | StatusCode::SERVICE_UNAVAILABLE
                         | StatusCode::GATEWAY_TIMEOUT
+                        | StatusCode::TOO_MANY_REQUESTS
                 ),
                 Err(_) => true,
             };
