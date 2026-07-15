@@ -1,3 +1,10 @@
+rust-proxmox-installer-types (0.1.2-1) trixie; urgency=medium
+
+  * fix #7682: installer-types: use correct kebab-case variant of arc-max
+    property in fs options.
+
+ -- Proxmox Support Team <support@proxmox.com>  Wed, 15 Jul 2026 09:00:42 +0200
+
 rust-proxmox-installer-types (0.1.1-1) trixie; urgency=medium
 
   * answer: declare `arc_max`, `copies`, and `minfree` in the filesystem
