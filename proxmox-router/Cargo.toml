@@ -17,6 +17,12 @@ path = "tests/docs.rs"
 test = true
 required-features = [ "cli" ]
 
+[[test]]
+name = "cli_error_print"
+path = "tests/cli_error_print.rs"
+harness = false
+required-features = [ "cli" ]
+
 [[example]]
 name = "help_output"
 path = "examples/help_output.rs"

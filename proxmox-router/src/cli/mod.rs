@@ -647,7 +647,15 @@ impl<'cli> CommandLineParseState<'cli> {
 
         self.enable_global_options(cli);
 
-        let mut args = self.handle_current_global_options(args, true)?;
+        // print usage on failure like the subcommand-lookup errors below, run() and try_run()
+        // callers only exit on the returned error and would otherwise fail silently
+        let mut args = match self.handle_current_global_options(args, true) {
+            Ok(args) => args,
+            Err(err) => {
+                print_nested_usage_error(&self.prefix, cli, &err.to_string());
+                return Err(err);
+            }
+        };
 
         // now deal with the actual subcommand list
         if args.is_empty() {
@@ -674,14 +682,31 @@ impl<'cli> CommandLineParseState<'cli> {
         self.parse_do(sub_cmd, rpcenv, args)
     }
 
+    /// Print a simple-command usage error like `handle_simple_command` does for argument
+    /// errors, so global-option parse failures are reported and not just returned.
+    fn print_simple_error(&self, cli: &CliCommand, err: Error) -> Error {
+        format::print_simple_usage_error_do(
+            &self.prefix,
+            cli,
+            &err.to_string(),
+            self.global_option_types.values().copied(),
+        );
+        err
+    }
+
     fn parse_simple(
         mut self,
         cli: &'cli CliCommand,
         rpcenv: &mut CliEnvironment,
         args: Vec<String>,
     ) -> Result<Invocation<'cli>, Error> {
-        let args = self.handle_current_global_options(args, false)?;
-        self.build_global_options(&mut *rpcenv)?;
+        let args = match self.handle_current_global_options(args, false) {
+            Ok(args) => args,
+            Err(err) => return Err(self.print_simple_error(cli, err)),
+        };
+        if let Err(err) = self.build_global_options(&mut *rpcenv) {
+            return Err(self.print_simple_error(cli, err));
+        }
         let interface = Arc::clone(&self.interface);
         Ok(Invocation {
             call: Box::new(move |rpcenv| {
