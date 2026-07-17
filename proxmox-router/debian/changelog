@@ -1,3 +1,17 @@
+rust-proxmox-router (3.2.8-1) trixie; urgency=medium
+
+  * cli: accept deprecated property aliases from proxmox-schema 5.3 when
+    parsing command-line arguments: an option renamed in the schema keeps
+    working under its old name, while only the new one shows up in help and
+    documentation. Specifying both spellings at once is rejected.
+
+  * cli: print a usage error when parsing a global option fails, instead of
+    exiting silently. This affected per-command options placed before the
+    subcommand, unknown global options, and global options missing their
+    value.
+
+ -- Proxmox Support Team <support@proxmox.com>  Fri, 17 Jul 2026 17:39:49 +0200
+
 rust-proxmox-router (3.2.7-1) trixie; urgency=medium
 
   * cli: auto-insert a `help` subcommand in CommandLine::new for nested
